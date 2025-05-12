@@ -1,0 +1,192 @@
+name: Greet, Celebrate, and Encourage
+
+on:
+  issues:
+    types:
+      - opened
+      - assigned
+  pull_request:
+    types:
+      - opened
+  pull_request_target:
+    types:
+      - closed
+
+jobs:
+  greet:
+    name: Greet, Celebrate, and Encourage
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - name: Check User Contributions
+        id: check_contributions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const user = context.payload.sender.login;
+            const [userIssues, userPulls] = await Promise.all([
+              github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                creator: user,
+                state: 'all'
+              }),
+              github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+                creator: user
+              })
+            ]);
+
+            const totalContributions = userIssues.data.length + userPulls.data.length;
+
+            console.log(`User: ${user}, Issues: ${userIssues.length}, PRs: ${userPulls.length}, Total: ${totalContributions}`);
+            core.setOutput('isFirstTime', totalContributions === 1);
+            core.setOutput('totalContributions', totalContributions);
+
+      - name: Post Personalized Greeting
+        if: ${{ github.event.action == 'opened' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const user = context.payload.sender.login;
+            const isIssue = !!context.payload.issue;
+            const isPR = !!context.payload.pull_request;
+            const isFirstTime = '${{ steps.check_contributions.outputs.isFirstTime }}' === 'true';
+            const totalContributions = parseInt('${{ steps.check_contributions.outputs.totalContributions }}');
+            let message = '';
+
+            if (isFirstTime) {
+              message = `🎉 Welcome aboard, @${user}! 🚀  
+              We're excited to see your **first contribution** to **Notpad**! 🌟  
+              Every great project starts with contributors like you. 💡  
+              Take a moment to check out our [CONTRIBUTING.md](https://github.com/Muhammed-Rahif/Notpad/blob/main/CONTRIBUTING.md) for tips and guidelines.  
+              Feel free to explore, experiment, and engage with the community.  
+              Your journey in open source starts here – happy coding! 🖥️`;
+            }
+
+            if (isIssue) {
+              message += `  
+              👋 Hi @${user}! Thank you for taking the time to report an issue in **Notpad**.  
+              We’ll dive into it shortly. 🕵️‍♂️🔧  
+              While you're here, why not add a ⭐ to the repo? [Click here to star](https://github.com/Muhammed-Rahif/Notpad/stargazers).  
+              Your support helps us grow this project and reach more awesome contributors like you! 🚀`;
+            }
+
+            if (isPR) {
+              message += `  
+              🙌 Woohoo, @${user}! Thanks for opening a pull request to **Notpad**. 🛠️✨  
+              Your efforts make this project better with every contribution.  
+              💡 Before we merge this, don’t forget to check our [CONTRIBUTING.md](https://github.com/Muhammed-Rahif/Notpad/blob/main/CONTRIBUTING.md) for a smoother process.  
+              Together, we’re building something incredible – keep up the amazing work! 💪  
+              (Psst... have you starred the repo yet? ⭐)`;
+            }
+
+            if (totalContributions === 5) {
+              message += `  
+              🎊 High five, @${user}! ✋ You’ve just hit a major milestone – **5 contributions** to **Notpad**!  
+              Contributors like you make this project shine brighter every day. 🌟  
+              Your dedication inspires us, and we can’t wait to see what you come up with next.  
+              A big thank you from the entire **Notpad** team – we deeply appreciate your support. 🙏  
+              Let’s keep building and making open source awesome together! 🚀`;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue?.number || context.payload.pull_request?.number,
+              body: message
+            });
+
+      - name: Assign User Guidance
+        if: ${{ github.event.action == 'assigned' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const assignee = context.payload.assignee.login;
+            const issueNumber = context.payload.issue.number;
+
+            // Fetch issues and pull requests created by the assignee
+            const [issues, pulls] = await Promise.all([
+              github.paginate(github.rest.issues.listForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+              }),
+              github.paginate(github.rest.pulls.list, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+              }),
+            ]);
+
+            // Filter to count only issues and pull requests created by the assignee
+            const assigneeIssues = issues.filter(issue => issue.user.login === assignee);
+            const assigneePulls = pulls.filter(pr => pr.user.login === assignee);
+
+            const totalContributions = assigneeIssues.length + assigneePulls.length;
+
+            // Log total contributions for debugging
+
+            // Compose the message based on contribution count
+            let message = '';
+            if (totalContributions < 3) {
+              message = `🛠️ **Heads up, @${assignee}!**  
+              You've been assigned an issue in **Notpad** – ready to make your mark? 🚀  
+              Since you're relatively new here, we highly recommend checking out our [CONTRIBUTING.md](https://github.com/Muhammed-Rahif/Notpad/blob/main/CONTRIBUTING.md).  
+              It’s packed with helpful tips, guidelines, and best practices to ensure a smooth contribution experience.  
+              We’re excited to see what you’ll bring to the table – happy coding! 💻✨`;
+            } else {
+              message = `🎉 Hi @${assignee}! You've been assigned an issue in **Notpad**.  
+              Your contributions so far have been awesome, and we can't wait to see what you'll do next! 🚀  
+              Remember to check out our [CONTRIBUTING.md](https://github.com/Muhammed-Rahif/Notpad/blob/main/CONTRIBUTING.md) for any guidelines or tips.  
+              Let's build something great together! 💡`;
+            }
+
+            // Post the comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: message
+            });
+
+      - name: Assign User Guidance
+        if: ${{ github.event.action == 'assigned' && steps.check_contributions.outputs.totalContributions < 3 }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const assignee = context.payload.assignee.login;
+            const issueNumber = context.payload.issue.number;
+            const message = `🛠️ **Heads up, @${assignee}!**  
+            You've been assigned an issue in **Notpad** – ready to make your mark? 🚀  
+            Since you're relatively new here, we highly recommend checking out our [CONTRIBUTING.md](https://github.com/Muhammed-Rahif/Notpad/blob/main/CONTRIBUTING.md).  
+            It’s packed with helpful tips, guidelines, and best practices to ensure a smooth contribution experience.  
+            We’re excited to see what you’ll bring to the table – happy coding! 💻✨`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: message
+            });
+
+      - name: Thank Contributor When PR is Merged
+        if: ${{ github.event.action == 'closed' && github.event.pull_request.merged == true }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const message = `🎉 Congratulations, @${pr.user.login}! Your pull request has been successfully merged. 🥳🎈  
+            You’ve just made **Notpad** better, and we couldn’t be more thankful. 🙌  
+            Your contribution is now part of the project, helping users and contributors around the world. 🌍  
+            We’re excited to see what else you have in store for us – the best is yet to come! 💡  
+            Cheers to you and the amazing world of open source! 🍻✨`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: message
+            });
